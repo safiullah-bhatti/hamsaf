@@ -19,10 +19,16 @@
   .question { font-size: 22px; font-weight: 700; margin-bottom: 18px; text-align: center; }
   #timer { text-align: center; font-size: 18px; color: #ffd166; margin-bottom: 10px; }
   .options { display: grid; gap: 12px; }
-  .opt-btn { padding: 18px; border-radius: 10px; border: none; background: #0f3460; color: #fff;
-             font-size: 18px; cursor: pointer; }
-  .opt-btn.selected { background: #e94560; }
+  .opt-btn { padding: 18px; border-radius: 10px; border: none; color: #fff;
+             font-size: 18px; font-weight: 600; cursor: pointer; }
+  .opt-btn.selected { outline: 4px solid #fff; }
   .opt-btn.disabled { opacity: .5; pointer-events: none; }
+  .opt-0 { background: #e63946; } /* red */
+  .opt-1 { background: #3a86ff; } /* blue */
+  .opt-2 { background: #ffb703; } /* yellow */
+  .opt-3 { background: #2a9d8f; } /* green */
+  .opt-yes { background: #2a9d8f; } /* green */
+  .opt-no  { background: #e63946; } /* red */
   .waiting { text-align: center; font-size: 20px; margin-top: 40px; }
   .feedback { text-align: center; font-size: 24px; margin-top: 30px; }
   .score { text-align: center; font-size: 16px; opacity: .8; margin-top: 8px; }
@@ -52,6 +58,9 @@
   <div id="timer"></div>
   <div class="question" id="questionText"></div>
   <div class="options" id="optionsList"></div>
+  <div id="multiSubmitWrap" class="hidden">
+    <button id="submitMultiBtn">Submit Answer</button>
+  </div>
   <div id="textAnswerWrap" class="hidden">
     <input id="textAnswer" placeholder="Type your answer" />
     <button id="submitTextBtn">Submit</button>
@@ -103,17 +112,31 @@
 
     const optsWrap = document.getElementById('optionsList');
     const textWrap = document.getElementById('textAnswerWrap');
+    const multiWrap = document.getElementById('multiSubmitWrap');
+
+    // Reset controls fresh for this question — this is what was missing before,
+    // which is why the text/multi submit buttons stayed disabled after question 1.
+    textWrap.classList.add('hidden');
+    multiWrap.classList.add('hidden');
+    document.getElementById('submitTextBtn').disabled = false;
+    document.getElementById('submitMultiBtn').disabled = false;
+
     if (q.type === 'text') {
       optsWrap.innerHTML = '';
       textWrap.classList.remove('hidden');
       document.getElementById('textAnswer').value = '';
+      document.getElementById('textAnswer').focus();
     } else {
-      textWrap.classList.add('hidden');
-      optsWrap.innerHTML = q.options.map((o, i) =>
-        `<button class="opt-btn" data-i="${i}">${escapeHtml(o)}</button>`).join('');
+      optsWrap.innerHTML = q.options.map((o, i) => {
+        const colorClass = q.type === 'yesno' ? (i === 0 ? 'opt-yes' : 'opt-no') : `opt-${i}`;
+        return `<button class="opt-btn ${colorClass}" data-i="${i}">${escapeHtml(o)}</button>`;
+      }).join('');
       [...optsWrap.querySelectorAll('.opt-btn')].forEach(btn => {
         btn.onclick = () => handleOptionClick(btn, q.type);
       });
+      if (q.type === 'multiple') {
+        multiWrap.classList.remove('hidden');
+      }
     }
   });
 
@@ -123,11 +146,15 @@
       btn.classList.toggle('selected');
       selected = [...document.querySelectorAll('.opt-btn.selected')].map(b => Number(b.dataset.i));
     } else {
-      // single / yesno: immediate submit
+      // single / yesno: immediate submit on tap
       selected = [i];
       submitAnswer();
     }
   }
+
+  document.getElementById('submitMultiBtn').onclick = () => {
+    submitAnswer();
+  };
 
   document.getElementById('submitTextBtn').onclick = () => {
     const val = document.getElementById('textAnswer').value.trim();
@@ -143,6 +170,7 @@
   function lockOptions() {
     [...document.querySelectorAll('.opt-btn')].forEach(b => b.classList.add('disabled'));
     document.getElementById('submitTextBtn').disabled = true;
+    document.getElementById('submitMultiBtn').disabled = true;
   }
 
   socket.on('answer-received', ({ correct, gained, total }) => {

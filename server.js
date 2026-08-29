@@ -9,7 +9,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { GoogleGenAI } = require('@google/genai');
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 4321;
 const QUESTION_SECONDS = 30;
 const REVEAL_SECONDS = 6; // pause between questions to show correct answer + leaderboard
 
@@ -164,8 +164,9 @@ function askNextQuestion(gameId) {
 
   game.state = 'question';
   game.questionStartedAt = Date.now();
-  // per-question answer tracker, reset each round
+  // per-question trackers, reset each round
   game._answeredThisRound = new Set();
+  game._textAnswers = new Map(); // normalized text -> { display, count }
 
   const q = game.questions[game.currentIndex];
   io.to(gameId).emit('question', {
@@ -246,7 +247,18 @@ io.on('connection', (socket) => {
 
     socket.emit('answer-received', { correct, gained, total: player.score });
 
-    // If everyone connected has answered, reveal early
+    // For text questions, track what people typed (regardless of correctness) so the
+    // host screen can show a live "word cloud" sized by how many people typed each answer.
+    if (q.type === 'text' && typeof answer === 'string' && answer.trim()) {
+      const key = answer.trim().toLowerCase();
+      const entry = game._textAnswers.get(key) || { display: answer.trim(), count: 0 };
+      entry.count += 1;
+      game._textAnswers.set(key, entry);
+      const cloud = [...game._textAnswers.values()].sort((a, b) => b.count - a.count).slice(0, 30);
+      io.to(gameId).emit('text-cloud-update', { cloud });
+    }
+
+    // If everyone connected has answered, reveal early — no need to wait out the full 30s.
     if (game._answeredThisRound.size >= game.players.size) {
       revealAnswer(gameId);
     }
