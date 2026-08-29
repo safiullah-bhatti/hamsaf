@@ -1,0 +1,16 @@
+{
+  "name": "hamsaf",
+  "version": "1.0.0",
+  "description": "Local-network Kahoot-style quiz game, host on laptop, players join from phone browsers.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "@google/genai": "^1.0.0",
+    "dotenv": "^16.4.5"
+  }
+}

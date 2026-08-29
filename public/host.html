@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiz Host</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #fff; margin: 0; padding: 24px; }
+  .card { max-width: 640px; margin: 0 auto; background: #16213e; border-radius: 16px; padding: 32px; }
+  h1 { margin-top: 0; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; opacity: .8; }
+  input { width: 100%; padding: 10px; border-radius: 8px; border: none; font-size: 16px; }
+  button { margin-top: 20px; width: 100%; padding: 14px; border: none; border-radius: 10px;
+           background: #e94560; color: #fff; font-size: 18px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .gameid { font-size: 48px; font-weight: 800; letter-spacing: 6px; text-align: center; margin: 16px 0; color: #e94560; }
+  .players { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .chip { background: #0f3460; padding: 8px 14px; border-radius: 20px; font-size: 14px; }
+  .question { font-size: 26px; font-weight: 700; margin: 16px 0; }
+  .options { display: grid; gap: 10px; margin: 16px 0; }
+  .opt { padding: 14px; border-radius: 10px; background: #0f3460; font-size: 17px; }
+  .opt.correct { background: #2e7d32; }
+  #timer { font-size: 20px; text-align: center; color: #ffd166; }
+  .lb { list-style: none; padding: 0; }
+  .lb li { display: flex; justify-content: space-between; background: #0f3460; padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; }
+  .winner { font-size: 22px; margin: 6px 0; }
+  .hidden { display: none; }
+  .err { color: #ffb4b4; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div id="setupView">
+    <h1>🎮 New Quiz</h1>
+    <label>Topic</label>
+    <input id="topicName" placeholder="e.g. Solar System" />
+    <label>Max age of players</label>
+    <input id="maxAge" type="number" value="12" />
+    <label>Number of questions</label>
+    <input id="qCount" type="number" value="8" />
+    <button id="createBtn">Generate & Create Game</button>
+    <div class="err" id="setupErr"></div>
+  </div>
+
+  <div id="lobbyView" class="hidden">
+    <h1>Join at <span id="lanHint">http://&lt;this-machine-IP&gt;:PORT/play</span></h1>
+    <div class="gameid" id="gameIdDisplay"></div>
+    <div>Players joined:</div>
+    <div class="players" id="playersList"></div>
+    <button id="startBtn" disabled>Start Game</button>
+  </div>
+
+  <div id="questionView" class="hidden">
+    <div id="timer"></div>
+    <div class="question" id="questionText"></div>
+    <div class="options" id="optionsList"></div>
+  </div>
+
+  <div id="revealView" class="hidden">
+    <h2>Leaderboard</h2>
+    <ul class="lb" id="lbList"></ul>
+  </div>
+
+  <div id="endView" class="hidden">
+    <h1>🏆 Winners</h1>
+    <div id="winnersList"></div>
+    <h3>Full leaderboard</h3>
+    <ul class="lb" id="finalLbList"></ul>
+  </div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  let gameId = null;
+
+  document.getElementById('lanHint').textContent =
+    `http://${location.hostname}:${location.port}/play`;
+
+  document.getElementById('createBtn').onclick = async () => {
+    const topicName = document.getElementById('topicName').value.trim();
+    const maxAge = document.getElementById('maxAge').value;
+    const qCount = document.getElementById('qCount').value;
+    const errEl = document.getElementById('setupErr');
+    errEl.textContent = '';
+    if (!topicName) { errEl.textContent = 'Enter a topic'; return; }
+
+    const btn = document.getElementById('createBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating questions with Gemini...';
+    try {
+      const res = await fetch('/startGame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topicName, maxAge, qCount }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create game');
+      gameId = data.gameId;
+      document.getElementById('gameIdDisplay').textContent = gameId;
+      show('lobbyView');
+      socket.emit('host-join', { gameId });
+    } catch (e) {
+      errEl.textContent = e.message;
+      btn.disabled = false;
+      btn.textContent = 'Generate & Create Game';
+    }
+  };
+
+  document.getElementById('startBtn').onclick = () => {
+    socket.emit('start-game', { gameId });
+  };
+
+  socket.on('lobby-update', ({ players }) => {
+    const list = document.getElementById('playersList');
+    list.innerHTML = players.map(p => `<div class="chip">${escapeHtml(p)}</div>`).join('');
+    document.getElementById('startBtn').disabled = players.length === 0;
+  });
+
+  socket.on('question', (q) => {
+    show('questionView');
+    document.getElementById('questionText').textContent = q.question;
+    const opts = q.options
+      ? q.options.map(o => `<div class="opt">${escapeHtml(o)}</div>`).join('')
+      : `<div class="opt">Players type their own answer</div>`;
+    document.getElementById('optionsList').innerHTML = opts;
+    startTimer(q.seconds);
+  });
+
+  socket.on('reveal', ({ leaderboard }) => {
+    show('revealView');
+    document.getElementById('lbList').innerHTML = leaderboard
+      .map(p => `<li><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`).join('');
+  });
+
+  socket.on('game-over', ({ leaderboard, winners }) => {
+    show('endView');
+    document.getElementById('winnersList').innerHTML = winners
+      .map((w, i) => `<div class="winner">${i === 0 ? '🥇' : '🥈'} ${escapeHtml(w.nickname)} — ${w.score} pts</div>`).join('');
+    document.getElementById('finalLbList').innerHTML = leaderboard
+      .map(p => `<li><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`).join('');
+  });
+
+  socket.on('error-msg', (msg) => alert(msg));
+
+  let timerInterval;
+  function startTimer(seconds) {
+    clearInterval(timerInterval);
+    let remaining = seconds;
+    const el = document.getElementById('timer');
+    el.textContent = `⏱ ${remaining}s`;
+    timerInterval = setInterval(() => {
+      remaining -= 1;
+      el.textContent = `⏱ ${Math.max(remaining, 0)}s`;
+      if (remaining <= 0) clearInterval(timerInterval);
+    }, 1000);
+  }
+
+  function show(id) {
+    ['setupView','lobbyView','questionView','revealView','endView'].forEach(v =>
+      document.getElementById(v).classList.toggle('hidden', v !== id));
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+</script>
+</body>
+</html>
