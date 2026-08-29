@@ -85,6 +85,15 @@
   let currentQuestion = null;
   let selected = [];
 
+  // If opened via the QR code (?game=12345), pre-fill the code and jump straight
+  // to the nickname field so kids only have to type their name.
+  const params = new URLSearchParams(location.search);
+  const prefillGame = params.get('game');
+  if (prefillGame) {
+    document.getElementById('gameId').value = prefillGame;
+    document.getElementById('nickname').focus();
+  }
+
   document.getElementById('joinBtn').onclick = () => {
     const gid = document.getElementById('gameId').value.trim();
     const nick = document.getElementById('nickname').value.trim();

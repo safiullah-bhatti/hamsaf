@@ -4,10 +4,12 @@
 
 require('dotenv').config();
 const path = require('path');
+const os = require('os');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { GoogleGenAI } = require('@google/genai');
+const QRCode = require('qrcode');
 
 const PORT = process.env.PORT || 4321;
 const QUESTION_SECONDS = 30;
@@ -25,6 +27,18 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // ---------- In-memory game state ----------
 // gameId -> game object. No DB, this is a party game — everything lives in RAM.
 const games = new Map();
+
+// Find this machine's LAN IP (the one phones on the same Wi-Fi can reach), so we can
+// build a full join URL for the QR code without the user having to type/paste it.
+function getLanIp() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) return net.address;
+    }
+  }
+  return 'localhost';
+}
 
 function makeGameId() {
   // 5-digit numeric code, easy to type on a phone keyboard
@@ -99,7 +113,10 @@ app.post('/startGame', async (req, res) => {
       timer: null,
     });
 
-    res.json({ gameId, questionCount: questions.length });
+    const joinUrl = `http://${getLanIp()}:${PORT}/play?game=${gameId}`;
+    const qrDataUrl = await QRCode.toDataURL(joinUrl, { width: 260, margin: 1 });
+
+    res.json({ gameId, questionCount: questions.length, joinUrl, qrDataUrl });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to create game' });
