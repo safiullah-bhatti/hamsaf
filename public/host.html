@@ -19,14 +19,27 @@
   .chip { background: #0f3460; padding: 8px 14px; border-radius: 20px; font-size: 14px; }
   .question { font-size: 26px; font-weight: 700; margin: 16px 0; }
   .options { display: grid; gap: 10px; margin: 16px 0; }
-  .opt { padding: 14px; border-radius: 10px; background: #0f3460; font-size: 17px; }
-  .opt.correct { background: #2e7d32; }
+  .opt { padding: 16px; border-radius: 10px; font-size: 17px; font-weight: 600; color: #fff; }
+  .opt.correct { outline: 4px solid #fff; }
+  .opt-0 { background: #e63946; } /* red */
+  .opt-1 { background: #3a86ff; } /* blue */
+  .opt-2 { background: #ffb703; } /* yellow */
+  .opt-3 { background: #2a9d8f; } /* green */
+  .opt-yes { background: #2a9d8f; } /* green */
+  .opt-no  { background: #e63946; } /* red */
   #timer { font-size: 20px; text-align: center; color: #ffd166; }
   .lb { list-style: none; padding: 0; }
-  .lb li { display: flex; justify-content: space-between; background: #0f3460; padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; }
+  .lb li { display: flex; justify-content: space-between; background: #0f3460; padding: 10px 14px;
+           border-radius: 8px; margin-bottom: 6px; opacity: 0; transform: translateY(12px);
+           animation: lbIn .4s ease forwards; }
+  @keyframes lbIn { to { opacity: 1; transform: translateY(0); } }
   .winner { font-size: 22px; margin: 6px 0; }
   .hidden { display: none; }
   .err { color: #ffb4b4; margin-top: 10px; }
+  .wordcloud { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: baseline; justify-content: center;
+               padding: 20px 0; min-height: 120px; }
+  .wc-word { font-weight: 700; color: #ffd166; transition: font-size .3s ease; }
+  .wc-empty { opacity: .5; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -56,6 +69,7 @@
     <div id="timer"></div>
     <div class="question" id="questionText"></div>
     <div class="options" id="optionsList"></div>
+    <div class="wordcloud hidden" id="wordcloud"></div>
   </div>
 
   <div id="revealView" class="hidden">
@@ -76,6 +90,7 @@
 <script>
   const socket = io();
   let gameId = null;
+  let currentQType = null;
 
   document.getElementById('lanHint').textContent =
     `http://${location.hostname}:${location.port}/play`;
@@ -122,18 +137,46 @@
 
   socket.on('question', (q) => {
     show('questionView');
+    currentQType = q.type;
     document.getElementById('questionText').textContent = q.question;
-    const opts = q.options
-      ? q.options.map(o => `<div class="opt">${escapeHtml(o)}</div>`).join('')
-      : `<div class="opt">Players type their own answer</div>`;
-    document.getElementById('optionsList').innerHTML = opts;
     startTimer(q.seconds);
+
+    const optsEl = document.getElementById('optionsList');
+    const wcEl = document.getElementById('wordcloud');
+
+    if (q.type === 'text') {
+      optsEl.classList.add('hidden');
+      optsEl.innerHTML = '';
+      wcEl.classList.remove('hidden');
+      wcEl.innerHTML = '<div class="wc-empty">Waiting for answers...</div>';
+    } else {
+      wcEl.classList.add('hidden');
+      wcEl.innerHTML = '';
+      optsEl.classList.remove('hidden');
+      optsEl.innerHTML = q.options.map((o, i) => {
+        const colorClass = q.type === 'yesno' ? (i === 0 ? 'opt-yes' : 'opt-no') : `opt-${i}`;
+        return `<div class="opt ${colorClass}">${escapeHtml(o)}</div>`;
+      }).join('');
+    }
+  });
+
+  socket.on('text-cloud-update', ({ cloud }) => {
+    const wcEl = document.getElementById('wordcloud');
+    if (!cloud.length) { wcEl.innerHTML = '<div class="wc-empty">Waiting for answers...</div>'; return; }
+    const maxCount = Math.max(...cloud.map(c => c.count));
+    const minPx = 16, maxPx = 56;
+    wcEl.innerHTML = cloud.map(c => {
+      const size = minPx + (maxPx - minPx) * (c.count / maxCount);
+      return `<span class="wc-word" style="font-size:${size}px">${escapeHtml(c.display)}</span>`;
+    }).join('');
   });
 
   socket.on('reveal', ({ leaderboard }) => {
     show('revealView');
-    document.getElementById('lbList').innerHTML = leaderboard
-      .map(p => `<li><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`).join('');
+    const el = document.getElementById('lbList');
+    el.innerHTML = leaderboard.map((p, i) =>
+      `<li style="animation-delay:${i * 0.12}s"><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`
+    ).join('');
   });
 
   socket.on('game-over', ({ leaderboard, winners }) => {
@@ -141,7 +184,7 @@
     document.getElementById('winnersList').innerHTML = winners
       .map((w, i) => `<div class="winner">${i === 0 ? '🥇' : '🥈'} ${escapeHtml(w.nickname)} — ${w.score} pts</div>`).join('');
     document.getElementById('finalLbList').innerHTML = leaderboard
-      .map(p => `<li><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`).join('');
+      .map((p, i) => `<li style="animation-delay:${i * 0.1}s"><span>${escapeHtml(p.nickname)}</span><span>${p.score}</span></li>`).join('');
   });
 
   socket.on('error-msg', (msg) => alert(msg));

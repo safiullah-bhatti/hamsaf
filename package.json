@@ -1,5 +1,5 @@
 {
-  "name": "hamsaf",
+  "name": "quizhost",
   "version": "1.0.0",
   "description": "Local-network Kahoot-style quiz game, host on laptop, players join from phone browsers.",
   "main": "server.js",
