@@ -40,6 +40,9 @@
                padding: 20px 0; min-height: 120px; }
   .wc-word { font-weight: 700; color: #ffd166; transition: font-size .3s ease; }
   .wc-empty { opacity: .5; font-size: 15px; }
+  .qr-wrap { display: flex; justify-content: center; margin: 12px 0; }
+  .qr-wrap img { border-radius: 12px; background: #fff; padding: 10px; width: 220px; height: 220px; }
+  .joinurl { text-align: center; font-size: 15px; opacity: .85; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -58,7 +61,10 @@
   </div>
 
   <div id="lobbyView" class="hidden">
-    <h1>Join at <span id="lanHint">http://&lt;this-machine-IP&gt;:PORT/play</span></h1>
+    <h1>Scan to join</h1>
+    <div class="qr-wrap"><img id="qrImg" alt="Scan to join" /></div>
+    <div class="joinurl" id="joinUrlText"></div>
+    <div style="text-align:center; opacity:.7; margin: 8px 0;">or type the code manually:</div>
     <div class="gameid" id="gameIdDisplay"></div>
     <div>Players joined:</div>
     <div class="players" id="playersList"></div>
@@ -92,9 +98,6 @@
   let gameId = null;
   let currentQType = null;
 
-  document.getElementById('lanHint').textContent =
-    `http://${location.hostname}:${location.port}/play`;
-
   document.getElementById('createBtn').onclick = async () => {
     const topicName = document.getElementById('topicName').value.trim();
     const maxAge = document.getElementById('maxAge').value;
@@ -116,6 +119,9 @@
       if (!res.ok) throw new Error(data.error || 'Failed to create game');
       gameId = data.gameId;
       document.getElementById('gameIdDisplay').textContent = gameId;
+      document.getElementById('qrImg').src = data.qrDataUrl;
+      const linkEl = document.getElementById('joinUrlText');
+      linkEl.textContent = data.joinUrl;
       show('lobbyView');
       socket.emit('host-join', { gameId });
     } catch (e) {
